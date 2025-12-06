@@ -10,7 +10,7 @@ class excelcleaner:
         df = df.dropna(how='all')
         df.to_excel(newfilename, index=False, engine='openpyxl')
         return df
-    def filecleaner_advanced(filename: str, newfilename: str):
+    def filecleaner_advanced(dataframe):
             
             #file_path=os.path.join(os.getcwd(),file_name)
             filename=filename
@@ -24,6 +24,7 @@ class excelcleaner:
                 if pd.isna(df.at[row, "Job Role"]) and pd.isna(df.at[row, "CTC"]):
                     df = df.drop(row)
                     print("dropped row:", row)
+            return df
 
         
 class FileReader:
@@ -219,7 +220,8 @@ class FileReader:
         print(f"Saving to: {newfilename_path}")
         
         excel_cleaner = excelcleaner()
-        excel_cleaner.filecleaner(df, newfilename_path)
+        new_df=excel_cleaner.filecleaner(df, newfilename_path)
+        excel_cleaner.filecleaner_advanced(new_df)
         
         print("Dictionary update completed.")
         return df
@@ -227,8 +229,13 @@ class FileReader:
 if __name__ == "__main__":
     try:
         file_reader = FileReader()
-        chat_text = input("Enter chat text file path: ")
+        chat_text = r"D:\chatexport\tester.txt"
         file_reader.dictupdate(chat_text)
+        try:
+            show=file_reader.process_content(chat_text)
+            print(show)
+        except exception as e:
+            print("exception happened in the lines between the 230 to 237")
     except Exception as e:
         print("Error:", e)
         import traceback
