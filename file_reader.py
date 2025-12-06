@@ -221,10 +221,10 @@ class FileReader:
         
         excel_cleaner = excelcleaner()
         new_df=excel_cleaner.filecleaner(df, newfilename_path)
-        excel_cleaner.filecleaner_advanced(new_df)
+        # excel_cleaner.filecleaner_advanced(new_df)
         
         print("Dictionary update completed.")
-        return df
+        return excel_cleaner.filecleaner_advanced(new_df)
 
 if __name__ == "__main__":
     try:
