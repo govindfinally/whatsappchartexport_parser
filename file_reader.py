@@ -10,7 +10,22 @@ class excelcleaner:
         df = df.dropna(how='all')
         df.to_excel(newfilename, index=False, engine='openpyxl')
         return df
+    def filecleaner_advanced(filename: str, newfilename: str):
+            
+            #file_path=os.path.join(os.getcwd(),file_name)
+            filename=filename
+            df=pd.read_csv(rf'{filename}',encoding='utf-8')
+            df=df.drop(columns=["Application Link"])
+            print(df.head())
+            
+            rowlist = df.index.tolist()
+            #print(df.at[232,"Job Role"])
+            for row in rowlist:
+                if pd.isna(df.at[row, "Job Role"]) and pd.isna(df.at[row, "CTC"]):
+                    df = df.drop(row)
+                    print("dropped row:", row)
 
+        
 class FileReader:
     def __init__(self):
         self.keys_ = [

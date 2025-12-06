@@ -278,6 +278,6 @@ else:
 st.divider()
 st.markdown("""
     <div style="text-align: center; color: #666; font-size: 0.9rem;">
-        Made with ❤️ using Streamlit | Export your WhatsApp chats without media for best results
+        Made with ❤️ using Streamlit BY GOVIND| Export your WhatsApp chats without media for best results
     </div>
 """, unsafe_allow_html=True)
