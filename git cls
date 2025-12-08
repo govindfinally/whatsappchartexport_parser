@@ -1,0 +1,177 @@
+[33mcommit b6e9f564f82342628b1deb2a702a9072767e4415[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m
+Author: govindfinally <govindmohanty4@gmail.com>
+Date:   Mon Dec 8 23:09:05 2025 +0530
+
+    Refactors file processing for improved modularity
+    
+    Separates content processing logic to support both CLI and programmatic usage, enabling easier integration with tools like Streamlit.
+    Introduces verbose logging for better traceability, restructures data cleaning workflow, and adds an advanced cleaner for post-processing.
+    Enhances maintainability and future extensibility of file handling routines.
+
+[1mdiff --git a/code.py b/code.py[m
+[1mindex 8239c42..2b5c23e 100644[m
+[1m--- a/code.py[m
+[1m+++ b/code.py[m
+[36m@@ -8,9 +8,25 @@[m [mclass excelcleaner:[m
+     def filecleaner(dataframe, newfilename: str):[m
+         df = dataframe[m
+         df = df.dropna(how='all')[m
+[31m-        print(df.info())[m
+         df.to_excel(newfilename, index=False, engine='openpyxl')[m
+[32m+[m[32m        return df[m
+[32m+[m[32m    def filecleaner_advanced(dataframe):[m
+[32m+[m[41m            [m
+[32m+[m[32m            #file_path=os.path.join(os.getcwd(),file_name)[m
+[32m+[m[32m            filename=filename[m
+[32m+[m[32m            df=pd.read_csv(rf'{filename}',encoding='utf-8')[m
+[32m+[m[32m            df=df.drop(columns=["Application Link"])[m
+[32m+[m[32m            print(df.head())[m
+[32m+[m[41m            [m
+[32m+[m[32m            rowlist = df.index.tolist()[m
+[32m+[m[32m            #print(df.at[232,"Job Role"])[m
+[32m+[m[32m            for row in rowlist:[m
+[32m+[m[32m                if pd.isna(df.at[row, "Job Role"]) and pd.isna(df.at[row, "CTC"]):[m
+[32m+[m[32m                    df = df.drop(row)[m
+[32m+[m[32m                    print("dropped row:", row)[m
+[32m+[m[32m            return df[m
+ [m
+[32m+[m[41m        [m
+ class FileReader:[m
+     def __init__(self):[m
+         self.keys_ = [[m
+[36m@@ -70,12 +86,27 @@[m [mclass FileReader:[m
+         [m
+         return None[m
+ [m
+[31m-    def dictupdate(self, filename: str):[m
+[31m-        with open(filename, "r", encoding="utf-8") as file:[m
+[31m-            lines = file.readlines()[m
+[32m+[m[32m    def process_content(self, content: str, verbose=False):[m
+[32m+[m[32m        """Process file content (string) and return DataFrame - for Streamlit"""[m
+[32m+[m[32m        lines = content.split('\n')[m
+[32m+[m[41m        [m
+[32m+[m[32m        # Reset company_dict for new processing[m
+[32m+[m[32m        self.company_dict = {[m
+[32m+[m[32m            "name": [],[m
+[32m+[m[32m            "Job Role": [],[m
+[32m+[m[32m            "CTC": [],[m
+[32m+[m[32m            "Stipend": [],[m
+[32m+[m[32m            "Eligible Batch": [],[m
+[32m+[m[32m            "Eligible Courses": [],[m
+[32m+[m[32m            "Eligible Branches": [],[m
+[32m+[m[32m            "Internship Duration": [],[m
+[32m+[m[32m            "Location": [],[m
+[32m+[m[32m            "Application Link": [][m
+[32m+[m[32m        }[m
+         [m
+         i = 0[m
+         company_count = 0[m
+[32m+[m[32m        processing_log = [][m
+         [m
+         while i < len(lines):[m
+             line = lines[i].strip()[m
+[36m@@ -95,9 +126,8 @@[m [mclass FileReader:[m
+                     continue[m
+                 [m
+                 company_count += 1[m
+[31m-                print(f"\n{'='*60}")[m
+[31m-                print(f"COMPANY #{company_count}: {company_name}")[m
+[31m-                print(f"{'='*60}")[m
+[32m+[m[32m                if verbose:[m
+[32m+[m[32m                    processing_log.append(f"COMPANY #{company_count}: {company_name}")[m
+                 [m
+                 # Initialize temp dict[m
+                 temp_dict = {key: "" for key in self.company_dict.keys()}[m
+[36m@@ -127,7 +157,8 @@[m [mclass FileReader:[m
+                         if current_key:[m
+                             value = " | ".join([v for v in current_value if v])[m
+                             temp_dict[current_key] = value[m
+[31m-                            print(f"  {current_key}: {value}")[m
+[32m+[m[32m                            if verbose:[m
+[32m+[m[32m                                processing_log.append(f"  {current_key}: {value}")[m
+                         [m
+                         # Start new key-value[m
+                         current_key = matched_key[m
+[36m@@ -148,7 +179,8 @@[m [mclass FileReader:[m
+                 if current_key:[m
+                     value = " | ".join([v for v in current_value if v])[m
+                     temp_dict[current_key] = value[m
+[31m-                    print(f"  {current_key}: {value}")[m
+[32m+[m[32m                    if verbose:[m
+[32m+[m[32m                        processing_log.append(f"  {current_key}: {value}")[m
+                 [m
+                 # Add to main dict[m
+                 for key in self.company_dict.keys():[m
+[36m@@ -158,36 +190,52 @@[m [mclass FileReader:[m
+             [m
+             i += 1[m
+         [m
+[31m-        print(f"\n{'='*60}")[m
+[31m-        print(f"TOTAL COMPANIES FOUND: {company_count}")[m
+[31m-        print(f"{'='*60}\n")[m
+[32m+[m[32m        if verbose:[m
+[32m+[m[32m            processing_log.append(f"TOTAL COMPANIES FOUND: {company_count}")[m
+         [m
+         # Length handling[m
+         handler = lenhandling()[m
+         self.company_dict = handler.lenhandling(self.company_dict)[m
+ [m
+[31m-        try:[m
+[31m-            df = pd.DataFrame.from_dict(self.company_dict)[m
+[31m-            print("\nDataFrame Preview:")[m
+[31m-            print(df.to_string())[m
+[31m-            [m
+[31m-            newfilename = input("\nEnter the filename to save the excel (without .xlsx extension): ")[m
+[31m-            newfilename_path = os.path.join(os.getcwd(), newfilename + ".xlsx")[m
+[31m-            print(f"Saving to: {newfilename_path}")[m
+[31m-            [m
+[31m-            excel_cleaner = excelcleaner()[m
+[31m-            excel_cleaner.filecleaner(df, newfilename_path)[m
+[31m-        except Exception as e:[m
+[31m-            print("Error writing Excel:", e)[m
+[31m-            raise[m
+[31m-        finally:[m
+[31m-            print("Dictionary update completed.")[m
+[32m+[m[32m        # Create DataFrame[m
+[32m+[m[32m        df = pd.DataFrame.from_dict(self.company_dict)[m
+[32m+[m[41m        [m
+[32m+[m[32m        return df, processing_log if verbose else df[m
+[32m+[m
+[32m+[m[32m    def dictupdate(self, filename: str):[m
+[32m+[m[32m        """Original method for CLI usage"""[m
+[32m+[m[32m        with open(filename, "r", encoding="utf-8") as file:[m
+[32m+[m[32m            content = file.read()[m
+[32m+[m[41m        [m
+[32m+[m[32m        df, log = self.process_content(content, verbose=True)[m
+[32m+[m[41m        [m
+[32m+[m[32m        for line in log:[m
+[32m+[m[32m            print(line)[m
+[32m+[m[41m        [m
+[32m+[m[32m        print("\nDataFrame Preview:")[m
+[32m+[m[32m        print(df.to_string())[m
+[32m+[m[41m        [m
+[32m+[m[32m        newfilename = input("\nEnter the filename to save the excel (without .xlsx extension): ")[m
+[32m+[m[32m        newfilename_path = os.path.join(os.getcwd(), newfilename + ".xlsx")[m
+[32m+[m[32m        print(f"Saving to: {newfilename_path}")[m
+[32m+[m[41m        [m
+[32m+[m[32m        excel_cleaner = excelcleaner()[m
+[32m+[m[32m        new_df=excel_cleaner.filecleaner(df, newfilename_path)[m
+[32m+[m[32m        # excel_cleaner.filecleaner_advanced(new_df)[m
+[32m+[m[41m        [m
+[32m+[m[32m        print("Dictionary update completed.")[m
+[32m+[m[32m        return excel_cleaner.filecleaner_advanced(new_df)[m
+ [m
+ if __name__ == "__main__":[m
+     try:[m
+         file_reader = FileReader()[m
+[31m-        chat_text=input("Enter chat text file path: ")[m
+[32m+[m[32m        chat_text = r"D:\chatexport\tester.txt"[m
+         file_reader.dictupdate(chat_text)[m
+[32m+[m[32m        try:[m
+[32m+[m[32m            show=file_reader.process_content(chat_text)[m
+[32m+[m[32m            print(show)[m
+[32m+[m[32m        except exception as e:[m
+[32m+[m[32m            print("exception happened in the lines between the 230 to 237")[m
+     except Exception as e:[m
+         print("Error:", e)[m
+         import traceback[m

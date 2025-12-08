@@ -2,29 +2,69 @@ import pandas as pd
 from arrlenhandling import lenhandling
 import os
 import re
+import pandas as pd
+from typing import Optional
+
+
 
 class excelcleaner:
     @staticmethod
-    def filecleaner(dataframe, newfilename: str):
-        df = dataframe
-        df = df.dropna(how='all')
-        df.to_excel(newfilename, index=False, engine='openpyxl')
+    def filecleaner(dataframe: pd.DataFrame, newfilename: Optional[str] = None) -> pd.DataFrame:
+        """
+        Basic cleaning:
+         - drop rows that are completely empty
+         - (you can add more basic cleaning steps here)
+        If newfilename is provided, write the cleaned DataFrame to that file (xlsx).
+        Always return the cleaned DataFrame.
+        """
+        # Defensive copy to avoid mutating caller's DataFrame
+        df = dataframe.copy()
+
+        # Basic cleaning
+        df = df.dropna(how="all")
+
+        # Optionally write to disk if requested
+        if newfilename:
+            # ensure parent dir exists (optional)
+            # Path(newfilename).parent.mkdir(parents=True, exist_ok=True)
+            df.to_excel(newfilename, index=False, engine="openpyxl")
+
+        # Run advanced cleaner (in-memory)
+        return excelcleaner.filecleaner_advanced(df)
+
+    
+    def filecleaner_advanced(dataframe: pd.DataFrame) -> pd.DataFrame:
+        """
+        Advanced cleaning (in-memory):
+         - drop column "Application Link" if present
+         - drop rows where BOTH "Job Role" and "CTC" are missing/NaN
+         - any other post-processing steps you want
+        Returns cleaned DataFrame.
+        """
+        df = dataframe.copy()
+
+        # Drop unwanted column if present
+        if "Application Link" in df.columns:
+            df = df.drop(columns=["Application Link"])
+
+        # If columns might be missing, create them (or handle gracefully)
+        for col in ["Job Role", "CTC"]:
+            if col not in df.columns:
+                df[col] = pd.NA
+
+        # Drop rows where both Job Role and CTC are NaN/empty
+        mask_both_missing = df["Job Role"].isna() & df["CTC"].isna()
+        df = df.loc[~mask_both_missing].reset_index(drop=True)
+
+        # (Optional) strip whitespace from string columns
+        str_cols = df.select_dtypes(include=["object"]).columns
+        for c in str_cols:
+            df[c] = df[c].astype(str).str.strip()
+
+        # Add any additional advanced cleaning here...
+
         return df
-    def filecleaner_advanced(dataframe):
-            
-            #file_path=os.path.join(os.getcwd(),file_name)
-            filename=filename
-            df=pd.read_csv(rf'{filename}',encoding='utf-8')
-            df=df.drop(columns=["Application Link"])
-            print(df.head())
-            
-            rowlist = df.index.tolist()
-            #print(df.at[232,"Job Role"])
-            for row in rowlist:
-                if pd.isna(df.at[row, "Job Role"]) and pd.isna(df.at[row, "CTC"]):
-                    df = df.drop(row)
-                    print("dropped row:", row)
-            return df
+
 
         
 class FileReader:

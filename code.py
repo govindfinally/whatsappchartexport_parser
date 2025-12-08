@@ -2,9 +2,19 @@ import pandas as pd
 from arrlenhandling import lenhandling
 import os
 import re
+from fastapi import FastAPI, UploadFile, File
+from starlette.responses import FileResponse
+from pydantic import BaseModel
+
+
+app=FastAPI()
+@app.get("/")
+def read_root():
+    return {"message":"Welcome to the placement of nit rourkla Data Extractor API"}
 
 class excelcleaner:
     @staticmethod
+    @app.post("/cleanfile/")
     def filecleaner(dataframe, newfilename: str):
         df = dataframe
         df = df.dropna(how='all')
@@ -26,7 +36,8 @@ class excelcleaner:
                     print("dropped row:", row)
             return df
 
-        
+@app.post("/uploadfile/")
+
 class FileReader:
     def __init__(self):
         self.keys_ = [
