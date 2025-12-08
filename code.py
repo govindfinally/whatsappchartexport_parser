@@ -8,9 +8,25 @@ class excelcleaner:
     def filecleaner(dataframe, newfilename: str):
         df = dataframe
         df = df.dropna(how='all')
-        print(df.info())
         df.to_excel(newfilename, index=False, engine='openpyxl')
+        return df
+    def filecleaner_advanced(dataframe):
+            
+            #file_path=os.path.join(os.getcwd(),file_name)
+            filename=filename
+            df=pd.read_csv(rf'{filename}',encoding='utf-8')
+            df=df.drop(columns=["Application Link"])
+            print(df.head())
+            
+            rowlist = df.index.tolist()
+            #print(df.at[232,"Job Role"])
+            for row in rowlist:
+                if pd.isna(df.at[row, "Job Role"]) and pd.isna(df.at[row, "CTC"]):
+                    df = df.drop(row)
+                    print("dropped row:", row)
+            return df
 
+        
 class FileReader:
     def __init__(self):
         self.keys_ = [
@@ -70,12 +86,27 @@ class FileReader:
         
         return None
 
-    def dictupdate(self, filename: str):
-        with open(filename, "r", encoding="utf-8") as file:
-            lines = file.readlines()
+    def process_content(self, content: str, verbose=False):
+        """Process file content (string) and return DataFrame - for Streamlit"""
+        lines = content.split('\n')
+        
+        # Reset company_dict for new processing
+        self.company_dict = {
+            "name": [],
+            "Job Role": [],
+            "CTC": [],
+            "Stipend": [],
+            "Eligible Batch": [],
+            "Eligible Courses": [],
+            "Eligible Branches": [],
+            "Internship Duration": [],
+            "Location": [],
+            "Application Link": []
+        }
         
         i = 0
         company_count = 0
+        processing_log = []
         
         while i < len(lines):
             line = lines[i].strip()
@@ -95,9 +126,8 @@ class FileReader:
                     continue
                 
                 company_count += 1
-                print(f"\n{'='*60}")
-                print(f"COMPANY #{company_count}: {company_name}")
-                print(f"{'='*60}")
+                if verbose:
+                    processing_log.append(f"COMPANY #{company_count}: {company_name}")
                 
                 # Initialize temp dict
                 temp_dict = {key: "" for key in self.company_dict.keys()}
@@ -127,7 +157,8 @@ class FileReader:
                         if current_key:
                             value = " | ".join([v for v in current_value if v])
                             temp_dict[current_key] = value
-                            print(f"  {current_key}: {value}")
+                            if verbose:
+                                processing_log.append(f"  {current_key}: {value}")
                         
                         # Start new key-value
                         current_key = matched_key
@@ -148,7 +179,8 @@ class FileReader:
                 if current_key:
                     value = " | ".join([v for v in current_value if v])
                     temp_dict[current_key] = value
-                    print(f"  {current_key}: {value}")
+                    if verbose:
+                        processing_log.append(f"  {current_key}: {value}")
                 
                 # Add to main dict
                 for key in self.company_dict.keys():
@@ -158,36 +190,52 @@ class FileReader:
             
             i += 1
         
-        print(f"\n{'='*60}")
-        print(f"TOTAL COMPANIES FOUND: {company_count}")
-        print(f"{'='*60}\n")
+        if verbose:
+            processing_log.append(f"TOTAL COMPANIES FOUND: {company_count}")
         
         # Length handling
         handler = lenhandling()
         self.company_dict = handler.lenhandling(self.company_dict)
 
-        try:
-            df = pd.DataFrame.from_dict(self.company_dict)
-            print("\nDataFrame Preview:")
-            print(df.to_string())
-            
-            newfilename = input("\nEnter the filename to save the excel (without .xlsx extension): ")
-            newfilename_path = os.path.join(os.getcwd(), newfilename + ".xlsx")
-            print(f"Saving to: {newfilename_path}")
-            
-            excel_cleaner = excelcleaner()
-            excel_cleaner.filecleaner(df, newfilename_path)
-        except Exception as e:
-            print("Error writing Excel:", e)
-            raise
-        finally:
-            print("Dictionary update completed.")
+        # Create DataFrame
+        df = pd.DataFrame.from_dict(self.company_dict)
+        
+        return df, processing_log if verbose else df
+
+    def dictupdate(self, filename: str):
+        """Original method for CLI usage"""
+        with open(filename, "r", encoding="utf-8") as file:
+            content = file.read()
+        
+        df, log = self.process_content(content, verbose=True)
+        
+        for line in log:
+            print(line)
+        
+        print("\nDataFrame Preview:")
+        print(df.to_string())
+        
+        newfilename = input("\nEnter the filename to save the excel (without .xlsx extension): ")
+        newfilename_path = os.path.join(os.getcwd(), newfilename + ".xlsx")
+        print(f"Saving to: {newfilename_path}")
+        
+        excel_cleaner = excelcleaner()
+        new_df=excel_cleaner.filecleaner(df, newfilename_path)
+        # excel_cleaner.filecleaner_advanced(new_df)
+        
+        print("Dictionary update completed.")
+        return excel_cleaner.filecleaner_advanced(new_df)
 
 if __name__ == "__main__":
     try:
         file_reader = FileReader()
-        chat_text=input("Enter chat text file path: ")
+        chat_text = r"D:\chatexport\tester.txt"
         file_reader.dictupdate(chat_text)
+        try:
+            show=file_reader.process_content(chat_text)
+            print(show)
+        except exception as e:
+            print("exception happened in the lines between the 230 to 237")
     except Exception as e:
         print("Error:", e)
         import traceback
