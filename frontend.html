@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NITR Placement Extractor — Demo UI</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #f6f9fc; }
+    .card { border-radius: 12px; box-shadow: 0 6px 20px rgba(20,30,50,0.06); }
+    .dropzone { border: 2px dashed #cfe2ff; border-radius: 8px; padding: 28px; text-align:center; background: #fff; cursor: pointer; }
+    .dropzone.dragover { background: #eef7ff; border-color: #4ea8ff; }
+    table th, table td { vertical-align: middle; }
+    .small-muted { font-size: 0.85rem; color: #6c757d; }
+  </style>
+</head>
+<body>
+  <div class="container py-5">
+    <div class="row justify-content-center">
+      <div class="col-lg-10">
+        <div class="card p-4 mb-4">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <h4 class="mb-0">NITR Placement Extractor — Demo UI</h4>
+            <small class="small-muted">Backend: <code>/preview/</code> & <code>/uploadfile/</code></small>
+          </div>
+
+          <div id="alerts"></div>
+
+          <div class="mb-3">
+            <div id="dropzone" class="dropzone">
+              <strong id="dz-text">Drag & drop a chat .txt file here, or click to choose</strong>
+              <div class="mt-2 small-muted">Only <code>.txt</code> files are accepted</div>
+            </div>
+            <input id="fileInput" type="file" accept=".txt" style="display:none" />
+          </div>
+
+          <div class="d-flex gap-2 mb-3">
+            <button id="btnPreview" class="btn btn-primary" disabled>Preview (parse)</button>
+            <button id="btnDownload" class="btn btn-success" disabled>Process & Download Excel</button>
+            <button id="btnReset" class="btn btn-outline-secondary">Reset</button>
+            <div class="flex-grow-1 text-end small-muted">Tip: use preview first to inspect parsed rows.</div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Search company (after preview):</label>
+            <div class="input-group">
+              <input id="companyName" class="form-control" placeholder="Exact company name" />
+              <button id="btnSearch" class="btn btn-outline-primary">Search</button>
+            </div>
+            <div id="companyResult" class="mt-2"></div>
+          </div>
+
+        </div>
+
+        <div id="previewCard" class="card p-3" style="display:none;">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <h5 class="mb-0">Preview</h5>
+            <div class="small-muted">Rows: <span id="rowCount">0</span> — Columns: <span id="colCount">0</span></div>
+          </div>
+          <div style="overflow:auto; max-height:420px;">
+            <table id="previewTable" class="table table-striped table-hover table-sm mb-0"></table>
+          </div>
+        </div>
+
+        <div class="text-center mt-4 small-muted">Open the browser console (F12) to see debug messages.</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const API_BASE = window.API_BASE || 'http://127.0.0.1:8000'; // change if needed
+let currentFile = null;
+let lastPreview = null; // holds preview JSON
+
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const btnPreview = document.getElementById('btnPreview');
+const btnDownload = document.getElementById('btnDownload');
+const btnReset = document.getElementById('btnReset');
+const alerts = document.getElementById('alerts');
+const previewCard = document.getElementById('previewCard');
+const previewTable = document.getElementById('previewTable');
+const rowCountEl = document.getElementById('rowCount');
+const colCountEl = document.getElementById('colCount');
+const companyNameInput = document.getElementById('companyName');
+const btnSearch = document.getElementById('btnSearch');
+const companyResult = document.getElementById('companyResult');
+
+function showAlert(type, message, timeout=5000) {
+  const id = 'a'+Date.now();
+  const el = document.createElement('div');
+  el.id = id;
+  el.className = `alert alert-${type} alert-dismissible`;
+  el.role = 'alert';
+  el.innerHTML = `<div>${message}</div><button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+  alerts.appendChild(el);
+  if (timeout) setTimeout(()=>{try{el.remove()}catch(e){}}, timeout);
+}
+
+function reset() {
+  currentFile = null; lastPreview = null;
+  fileInput.value = null; previewCard.style.display='none';
+  btnPreview.disabled = true; btnDownload.disabled = true; companyResult.innerHTML='';
+}
+
+// Drag & drop handlers
+['dragenter','dragover'].forEach(ev=>{
+  dropzone.addEventListener(ev, (e)=>{ e.preventDefault(); e.stopPropagation(); dropzone.classList.add('dragover'); });
+});
+['dragleave','drop'].forEach(ev=>{
+  dropzone.addEventListener(ev, (e)=>{ e.preventDefault(); e.stopPropagation(); dropzone.classList.remove('dragover'); });
+});
+
+dropzone.addEventListener('click', ()=>fileInput.click());
+fileInput.addEventListener('change', (e)=>{
+  const f = e.target.files[0]; handleFileSelect(f);
+});
+
+dropzone.addEventListener('drop', (e)=>{
+  const f = e.dataTransfer.files[0]; handleFileSelect(f);
+});
+
+function handleFileSelect(file) {
+  if (!file) return;
+  if (!file.name.toLowerCase().endsWith('.txt')) { showAlert('warning','Only .txt files allowed'); return; }
+  currentFile = file;
+  btnPreview.disabled = false; btnDownload.disabled = false;
+  showAlert('success',`Selected: ${file.name}`, 3000);
+}
+
+btnReset.addEventListener('click', reset);
+
+btnPreview.addEventListener('click', async ()=>{
+  if (!currentFile) return showAlert('warning','No file selected');
+  try {
+    btnPreview.disabled=true; showAlert('info','Parsing file — please wait...',2000);
+    const form = new FormData(); form.append('file', currentFile);
+    const res = await fetch(`${API_BASE}/preview/`, { method:'POST', body: form });
+    if (!res.ok) {
+      const txt = await res.text(); throw new Error(txt || 'Preview failed');
+    }
+    const data = await res.json();
+    lastPreview = data;
+    renderPreview(data);
+    showAlert('success','Preview ready');
+  } catch(err) {
+    console.error(err); showAlert('danger', 'Preview error: '+err.message, 7000);
+  } finally { btnPreview.disabled=false; }
+});
+
+function renderPreview(data) {
+  previewCard.style.display='block';
+  rowCountEl.textContent = data.rows; colCountEl.textContent = data.columns;
+  const rows = data.preview || [];
+  // build table header
+  previewTable.innerHTML = '';
+  if (!rows.length) { previewTable.innerHTML = '<div class="p-3 small-muted">No rows to preview</div>'; return; }
+  const thead = document.createElement('thead'); const tbody = document.createElement('tbody');
+  const cols = Object.keys(rows[0]);
+  const trh = document.createElement('tr'); cols.forEach(c=>{ const th = document.createElement('th'); th.textContent = c; trh.appendChild(th); }); thead.appendChild(trh);
+  rows.forEach(r=>{ const tr = document.createElement('tr'); cols.forEach(c=>{ const td = document.createElement('td'); td.innerHTML = escapeHtml(String(r[c] ?? '')); tr.appendChild(td); }); tbody.appendChild(tr); });
+  previewTable.appendChild(thead); previewTable.appendChild(tbody);
+}
+
+function escapeHtml(s){ return s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+
+btnDownload.addEventListener('click', async ()=>{
+  if (!currentFile) return showAlert('warning','No file selected');
+  try {
+    btnDownload.disabled=true; showAlert('info','Processing and preparing Excel — please wait...',5000);
+    const form = new FormData(); form.append('file', currentFile);
+    const res = await fetch(`${API_BASE}/uploadfile/?download=true`, { method:'POST', body: form });
+    if (!res.ok) {
+      const txt = await res.text(); throw new Error(txt || 'Download failed');
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = (currentFile.name.replace(/\.txt$/i,'') || 'cleaned') + '.xlsx'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    showAlert('success','Excel downloaded');
+  } catch(err) {
+    console.error(err); showAlert('danger','Download error: '+err.message,7000);
+  } finally { btnDownload.disabled=false; }
+});
+
+btnSearch.addEventListener('click', async ()=>{
+  const name = companyNameInput.value.trim();
+  if (!name) return showAlert('warning','Enter a company name to search');
+  try {
+    showAlert('info', 'Searching...');
+    const res = await fetch(`${API_BASE}/preview/${encodeURIComponent(name)}`);
+    if (!res.ok) { const txt = await res.text(); throw new Error(txt || 'Not found'); }
+    const obj = await res.json();
+    // display object
+    companyResult.innerHTML = '<pre class="bg-light p-3">' + JSON.stringify(obj, null, 2) + '</pre>';
+  } catch(err) {
+    console.error(err); companyResult.innerHTML=''; showAlert('danger','Search error: '+err.message,5000);
+  }
+});
+
+// small UX: allow Enter key to trigger search
+companyNameInput.addEventListener('keydown', (e)=>{ if (e.key==='Enter') { e.preventDefault(); btnSearch.click(); } });
+
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -2,79 +2,59 @@ import pandas as pd
 from arrlenhandling import lenhandling
 import os
 import re
-import pandas as pd
 from typing import Optional
 
 
+# ==============================
+#        EXCEL CLEANER
+# ==============================
 
 class excelcleaner:
+
     @staticmethod
     def filecleaner(dataframe: pd.DataFrame, newfilename: Optional[str] = None) -> pd.DataFrame:
-        """
-        Basic cleaning:
-         - drop rows that are completely empty
-         - (you can add more basic cleaning steps here)
-        If newfilename is provided, write the cleaned DataFrame to that file (xlsx).
-        Always return the cleaned DataFrame.
-        """
-        # Defensive copy to avoid mutating caller's DataFrame
         df = dataframe.copy()
-
-        # Basic cleaning
         df = df.dropna(how="all")
 
-        # Optionally write to disk if requested
         if newfilename:
-            # ensure parent dir exists (optional)
-            # Path(newfilename).parent.mkdir(parents=True, exist_ok=True)
             df.to_excel(newfilename, index=False, engine="openpyxl")
 
-        # Run advanced cleaner (in-memory)
         return excelcleaner.filecleaner_advanced(df)
 
-    
+    @staticmethod
     def filecleaner_advanced(dataframe: pd.DataFrame) -> pd.DataFrame:
-        """
-        Advanced cleaning (in-memory):
-         - drop column "Application Link" if present
-         - drop rows where BOTH "Job Role" and "CTC" are missing/NaN
-         - any other post-processing steps you want
-        Returns cleaned DataFrame.
-        """
         df = dataframe.copy()
 
-        # Drop unwanted column if present
         if "Application Link" in df.columns:
             df = df.drop(columns=["Application Link"])
 
-        # If columns might be missing, create them (or handle gracefully)
         for col in ["Job Role", "CTC"]:
             if col not in df.columns:
                 df[col] = pd.NA
 
-        # Drop rows where both Job Role and CTC are NaN/empty
         mask_both_missing = df["Job Role"].isna() & df["CTC"].isna()
         df = df.loc[~mask_both_missing].reset_index(drop=True)
 
-        # (Optional) strip whitespace from string columns
         str_cols = df.select_dtypes(include=["object"]).columns
         for c in str_cols:
             df[c] = df[c].astype(str).str.strip()
 
-        # Add any additional advanced cleaning here...
-
         return df
 
 
-        
+# ==============================
+#        FILE READER
+# ==============================
+
 class FileReader:
+
     def __init__(self):
         self.keys_ = [
-            "Job Role", "CTC", "Stipend", "Eligible Batch", 
-            "Eligible Courses", "Eligible Branches", 
+            "Job Role", "CTC", "Stipend", "Eligible Batch",
+            "Eligible Courses", "Eligible Branches",
             "Internship Duration", "Location", "Application Link"
         ]
-        
+
         self.company_dict = {
             "name": [],
             "Job Role": [],
@@ -88,197 +68,202 @@ class FileReader:
             "Application Link": []
         }
 
+    # ==============================
+    #  COMPANY NAME EXTRACTOR
+    # ==============================
+
     def extract_company_name(self, header_line):
-        """Extract company name from header line"""
-        # Remove date/phone prefix
-        clean_line = re.sub(r'^\d{2}/\d{2}/\d{2},\s+\d{2}:\d{2}\s+-\s+\+[\d\s]+:\s+', '', header_line)
-        clean_line = clean_line.strip('*').strip()
-        
-        # Get first part before |
-        parts = clean_line.split('|')
-        company_name = parts[0].strip() if parts else ""
-        
+        line = header_line.replace('\u200e', '').replace('\u202f', '').strip()
+
+        # Remove [date time] part (new format)
+        if line.startswith("["):
+            line = re.sub(r'^\[.*?\]\s+', '', line)
+
+        # Remove old format date prefix
+        else:
+            line = re.sub(r'^\d{2}/\d{2}/\d{2},.*?\-\s+', '', line)
+
+        # Remove sender name
+        parts = line.split(":", 1)
+        content = parts[1].strip() if len(parts) > 1 else line.strip()
+
+        # Extract before "|"
+        company_name = content.split("|")[0].strip("* ").strip()
+
         return company_name
 
+    # ==============================
+    #  KEY NORMALIZER
+    # ==============================
+
     def normalize_key(self, line):
-        """Check if line starts with any of our keys (including variations)"""
-        # Remove leading/trailing asterisks and whitespace
         clean_line = line.strip('*').strip()
         line_lower = clean_line.lower()
-        
-        # Direct matches
+
         for key in self.keys_:
             if line_lower.startswith(key.lower() + ":"):
                 return key
-        
-        # Handle variations
+
         variations = {
             "eligible batches:": "Eligible Batch",
             "eligible course:": "Eligible Courses",
             "eligible branch:": "Eligible Branches",
             "application form:": "Application Link",
-            "ctc (on ppo conversion):": "CTC"
+            "registration link:": "Application Link",
+            "ctc (on ppo conversion):": "CTC",
+            "role:": "Job Role",
+            "job title:": "Job Role",
+            "job role:": "Job Role",
+            "stipend offered:": "Stipend",
+            "duration:": "Internship Duration"
         }
-        
+
         for variation, normalized_key in variations.items():
             if line_lower.startswith(variation):
                 return normalized_key
-        
+
         return None
 
+    # ==============================
+    #  MAIN PROCESSOR
+    # ==============================
+
     def process_content(self, content: str, verbose=False):
-        """Process file content (string) and return DataFrame - for Streamlit"""
+
         lines = content.split('\n')
-        
-        # Reset company_dict for new processing
-        self.company_dict = {
-            "name": [],
-            "Job Role": [],
-            "CTC": [],
-            "Stipend": [],
-            "Eligible Batch": [],
-            "Eligible Courses": [],
-            "Eligible Branches": [],
-            "Internship Duration": [],
-            "Location": [],
-            "Application Link": []
-        }
-        
+
+        # Reset dict
+        self.company_dict = {key: [] for key in self.company_dict.keys()}
+
         i = 0
         company_count = 0
         processing_log = []
-        
+
         while i < len(lines):
-            line = lines[i].strip()
-            
-            # Skip empty lines
+            raw_line = lines[i]
+            line = raw_line.replace('\u200e', '').replace('\u202f', '').strip()
+
             if not line:
                 i += 1
                 continue
-            
-            # Check if this is a company header (has date/phone prefix and contains | )
-            if re.match(r'^\d{2}/\d{2}/\d{2},\s+\d{2}:\d{2}\s+-\s+\+[\d\s]+:', line) and '|' in line:
+
+            # MATCH BOTH OLD + NEW FORMATS
+            header_pattern = r'^\[?\d{2}/\d{2}/\d{2},.*?\]?\s+.*?:'
+
+            if re.match(header_pattern, line) and "|" in line:
+
                 company_name = self.extract_company_name(line)
-                
-                # Skip if company name is too short or empty
-                if not company_name or len(company_name) < 2:
+
+                if not company_name:
                     i += 1
                     continue
-                
+
                 company_count += 1
+
                 if verbose:
                     processing_log.append(f"COMPANY #{company_count}: {company_name}")
-                
-                # Initialize temp dict
+
                 temp_dict = {key: "" for key in self.company_dict.keys()}
                 temp_dict["name"] = company_name
-                
-                # Process subsequent lines
+
                 i += 1
                 current_key = None
                 current_value = []
-                
+
                 while i < len(lines):
-                    line = lines[i].strip()
-                    
-                    # Check if we've reached next company (next message with date/phone)
-                    if re.match(r'^\d{2}/\d{2}/\d{2},\s+\d{2}:\d{2}\s+-\s+\+[\d\s]+:', line):
+                    next_line = lines[i].replace('\u200e', '').replace('\u202f', '').strip()
+
+                    if re.match(header_pattern, next_line):
                         break
-                    
-                    if not line:
+
+                    if not next_line:
                         i += 1
                         continue
-                    
-                    # Check if this line is a key (format: *Key:* value or *Key:*)
-                    matched_key = self.normalize_key(line)
-                    
+
+                    matched_key = self.normalize_key(next_line)
+
                     if matched_key:
-                        # Save previous key-value
                         if current_key:
-                            value = " | ".join([v for v in current_value if v])
-                            temp_dict[current_key] = value
-                            if verbose:
-                                processing_log.append(f"  {current_key}: {value}")
-                        
-                        # Start new key-value
+                            temp_dict[current_key] = " | ".join(current_value)
+
                         current_key = matched_key
-                        # Extract value after the colon (remove asterisks)
-                        value_part = line.strip('*').split(":", 1)[1].strip() if ":" in line else ""
-                        current_value = [value_part] if value_part else []
+                        value_part = next_line.strip('*').split(":", 1)
+                        current_value = [value_part[1].strip()] if len(value_part) > 1 else []
+
                     elif current_key:
-                        # Continuation of current key
-                        # Remove leading asterisks, bullets, and special chars
-                        clean_line = line.lstrip('*').lstrip('•').lstrip('-').lstrip('\u2060').strip()
-                        # Skip lines that are clearly notes or other sections we don't want
-                        if clean_line and not clean_line.startswith("_"):
+                        clean_line = next_line.lstrip('*').lstrip('•').lstrip('-').strip()
+                        if clean_line:
                             current_value.append(clean_line)
-                    
+
                     i += 1
-                
-                # Save last key-value
+
                 if current_key:
-                    value = " | ".join([v for v in current_value if v])
-                    temp_dict[current_key] = value
-                    if verbose:
-                        processing_log.append(f"  {current_key}: {value}")
-                
-                # Add to main dict
+                    temp_dict[current_key] = " | ".join(current_value)
+
                 for key in self.company_dict.keys():
                     self.company_dict[key].append(temp_dict[key])
-                
+
                 continue
-            
+
             i += 1
-        
+
         if verbose:
             processing_log.append(f"TOTAL COMPANIES FOUND: {company_count}")
-        
-        # Length handling
+
         handler = lenhandling()
         self.company_dict = handler.lenhandling(self.company_dict)
 
-        # Create DataFrame
         df = pd.DataFrame.from_dict(self.company_dict)
-        
-        return df, processing_log if verbose else df
+
+        if verbose:
+            return df, processing_log
+
+        return df
+
+    # ==============================
+    # CLI METHOD
+    # ==============================
 
     def dictupdate(self, filename: str):
-        """Original method for CLI usage"""
+
         with open(filename, "r", encoding="utf-8") as file:
             content = file.read()
-        
+
         df, log = self.process_content(content, verbose=True)
-        
+
         for line in log:
             print(line)
-        
+
         print("\nDataFrame Preview:")
         print(df.to_string())
-        
+
         newfilename = input("\nEnter the filename to save the excel (without .xlsx extension): ")
         newfilename_path = os.path.join(os.getcwd(), newfilename + ".xlsx")
+
         print(f"Saving to: {newfilename_path}")
-        
+
         excel_cleaner = excelcleaner()
-        new_df=excel_cleaner.filecleaner(df, newfilename_path)
-        # excel_cleaner.filecleaner_advanced(new_df)
-        
+        cleaned_df = excel_cleaner.filecleaner(df, newfilename_path)
+
         print("Dictionary update completed.")
-        return excel_cleaner.filecleaner_advanced(new_df)
+
+        return cleaned_df
+
+
+# ==============================
+#  MAIN
+# ==============================
 
 if __name__ == "__main__":
     try:
         file_reader = FileReader()
         chat_text = r"D:\chatexport\tester.txt"
         file_reader.dictupdate(chat_text)
-        try:
-            show=file_reader.process_content(chat_text)
-            print(show)
-        except exception as e:
-            print("exception happened in the lines between the 230 to 237")
+
     except Exception as e:
         print("Error:", e)
         import traceback
         traceback.print_exc()
+
     finally:
         print("Execution completed.")
