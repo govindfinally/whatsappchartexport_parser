@@ -3,7 +3,7 @@
 A web-based app that parses and visualizes WhatsApp chat exports using Streamlit.
 Upload your exported .txt chat file, and instantly see detailed stats, message patterns, and interactive visualizations.
 
-🔗 Live Demo: https://govindfinally-whatsappchartexport-parser-app-hrccpc.streamlit.app/
+🔗 Live Demo:[ https://govindfinally-whatsappchartexport-parser-app-hrccpc.streamlit.app/](https://govindfinally-whatsappchartexport-parser-app-hrccpc.streamlit.app/)
 
 🚀 Features
 
@@ -110,6 +110,7 @@ Copyright (c) 2025 Govind Mohanty
 
 For feedback, issues, or collaboration:
 Govind Mohanty
-🌐 Live App: https://govindfinally-whatsappchartexport-parser-app-hrccpc.streamlit.app/
+🌐 Live App: [https://govindfinally-whatsappchartexport-parser-app-hrccpc.streamlit.app/](https://govindfinally-whatsappchartexport-parser-app-hrccpc.streamlit.app/)
 
 📧 Email: (govindmohanty4@gmail.com)
+
